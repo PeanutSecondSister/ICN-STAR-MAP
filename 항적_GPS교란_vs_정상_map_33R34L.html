@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>항적_GPS교란_vs_정상_map_33R34L</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.css"/>
+    <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.js"></script>
+    <style>
+        html, body, #map { width:100%; height:100%; margin:0; padding:0; }
+        #loading {
+            position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
+            z-index:2000; background:white; padding:20px 30px; border-radius:8px;
+            border:2px solid #aaa; font-family:Arial; font-size:15px;
+            box-shadow:2px 2px 8px rgba(0,0,0,.3); text-align:center;
+        }
+        .legend {
+            position:fixed; bottom:40px; left:40px; z-index:1000;
+            background:white; padding:12px 16px; border-radius:8px;
+            border:2px solid #aaa; font-family:Arial,sans-serif; font-size:13px;
+            box-shadow:2px 2px 8px rgba(0,0,0,.3);
+        }
+        .layer-control {
+            position:fixed; top:10px; right:10px; z-index:1000;
+            background:white; padding:10px 14px; border-radius:8px;
+            border:2px solid #aaa; font-family:Arial,sans-serif; font-size:13px;
+            box-shadow:2px 2px 8px rgba(0,0,0,.3); max-height:90vh; overflow-y:auto;
+        }
+        .layer-control label { display:block; margin:3px 0; cursor:pointer; }
+        .section-title { font-weight:bold; margin-top:8px; margin-bottom:2px; font-size:12px; color:#555; }
+        .tile-btn {
+            display:inline-block; margin:2px 3px 2px 0; padding:3px 10px;
+            border:1px solid #aaa; border-radius:4px; cursor:pointer; font-size:12px;
+            background:#f5f5f5; user-select:none;
+        }
+        .tile-btn.active { background:#1565C0; color:white; border-color:#1565C0; }
+        .fix-label { background:none !important; border:none !important; }
+    </style>
+</head>
+<body>
+<div id="map"></div>
+<div id="loading">&#9203; 항적 데이터 로딩 중...<br><small style="color:#888;">잠시만 기다려 주세요</small></div>
+
+<div class="legend">
+    <b>항적 범례</b><br>
+    <span style="color:#C62828;">&#9632;</span> GPS 교란 항적<br>
+    <span style="color:#1565C0;">&#9632;</span> GPS 정상 항적<br>
+    <span style="font-size:10px;color:#555;">&#9679; 1분 간격 위치점</span><br>
+    <hr style="margin:6px 0;border-color:#ddd;">
+    <span style="font-size:12px;font-weight:bold;">픽스 마커 · STAR 경로</span><br>
+    <span style="color:#27ae60;font-weight:bold;">&#9670;</span><span style="display:inline-block;width:18px;height:0;border-top:2px dashed #27ae60;vertical-align:middle;margin:0 3px;"></span> GUKDO 2E (동남쪽)<br>
+    <span style="color:#f39c12;font-weight:bold;">&#9670;</span><span style="display:inline-block;width:18px;height:0;border-top:2px dashed #f39c12;vertical-align:middle;margin:0 3px;"></span> KARBU 2E (동쪽)<br>
+    <span style="color:#e67e22;font-weight:bold;">&#9670;</span><span style="display:inline-block;width:18px;height:0;border-top:2px dashed #e67e22;vertical-align:middle;margin:0 3px;"></span> OLMEN 2E (남쪽)<br>
+    <span style="color:#9b59b6;font-weight:bold;">&#9670;</span><span style="display:inline-block;width:18px;height:0;border-top:2px dashed #9b59b6;vertical-align:middle;margin:0 3px;"></span> REBIT 2A (서쪽)<br>
+    <span style="color:#E65100;font-weight:bold;">&#9670;</span> FAF<br>
+    <hr style="margin:6px 0;border-color:#ddd;">
+    <span style="font-size:10px;color:#888;">&#9679; STAR 경로 내 웨이포인트</span>
+    <hr style="margin:6px 0;border-color:#ddd;">
+    <span style="font-size:11px;font-weight:bold;">평균 항적</span><br>
+    <span style="display:inline-block;width:18px;height:3px;background:#C62828;vertical-align:middle;margin-right:4px;"></span><span style="font-size:11px;">교란 평균 (빨간 실선)</span><br>
+    <span style="display:inline-block;width:18px;height:3px;background:#1565C0;vertical-align:middle;margin-right:4px;"></span><span style="font-size:11px;">정상 평균 (파란 실선)</span>
+</div>
+
+<div class="layer-control">
+    <b>레이어</b>
+    <div class="section-title">── 지도 배경 ──</div>
+    <div>
+        <span class="tile-btn active" id="btn-light" onclick="switchTile('light')">밝은색</span>
+        <span class="tile-btn"        id="btn-dark"  onclick="switchTile('dark')">어두운색</span>
+    </div>
+    <div class="section-title">── GPS 교란 ──</div>
+    <label><input type="checkbox" class="chk-track" data-group="disrupted" data-fix="GUKDO"> <span style="color:#C62828;">&#9632;</span> 교란 | GUKDO (동남쪽)</label>
+    <label><input type="checkbox" class="chk-track" data-group="disrupted" data-fix="KARBU"> <span style="color:#C62828;">&#9632;</span> 교란 | KARBU (동쪽)</label>
+    <label><input type="checkbox" class="chk-track" data-group="disrupted" data-fix="OLMEN"> <span style="color:#C62828;">&#9632;</span> 교란 | OLMEN (남쪽)</label>
+    <label><input type="checkbox" class="chk-track" data-group="disrupted" data-fix="REBIT"> <span style="color:#C62828;">&#9632;</span> 교란 | REBIT (서쪽)</label>
+    <div class="section-title">── GPS 정상 ──</div>
+    <label><input type="checkbox" class="chk-track" data-group="normal" data-fix="GUKDO"> <span style="color:#1565C0;">&#9632;</span> 정상 | GUKDO (동남쪽)</label>
+    <label><input type="checkbox" class="chk-track" data-group="normal" data-fix="KARBU"> <span style="color:#1565C0;">&#9632;</span> 정상 | KARBU (동쪽)</label>
+    <label><input type="checkbox" class="chk-track" data-group="normal" data-fix="OLMEN"> <span style="color:#1565C0;">&#9632;</span> 정상 | OLMEN (남쪽)</label>
+    <label><input type="checkbox" class="chk-track" data-group="normal" data-fix="REBIT"> <span style="color:#1565C0;">&#9632;</span> 정상 | REBIT (서쪽)</label>
+    <div class="section-title">── 픽스 마커 · STAR 경로 ──</div>
+    <label><input type="checkbox" id="chk-fix-GUKDO"> <span style="color:#27ae60;">&#9670;</span> <span style="display:inline-block;width:14px;height:0;border-top:2px dashed #27ae60;vertical-align:middle;margin:0 3px;"></span> GUKDO 2E (동남쪽)</label>
+    <label><input type="checkbox" id="chk-fix-KARBU"> <span style="color:#f39c12;">&#9670;</span> <span style="display:inline-block;width:14px;height:0;border-top:2px dashed #f39c12;vertical-align:middle;margin:0 3px;"></span> KARBU 2E (동쪽)</label>
+    <label><input type="checkbox" id="chk-fix-OLMEN"> <span style="color:#e67e22;">&#9670;</span> <span style="display:inline-block;width:14px;height:0;border-top:2px dashed #e67e22;vertical-align:middle;margin:0 3px;"></span> OLMEN 2E (남쪽)</label>
+    <label><input type="checkbox" id="chk-fix-REBIT"> <span style="color:#9b59b6;">&#9670;</span> <span style="display:inline-block;width:14px;height:0;border-top:2px dashed #9b59b6;vertical-align:middle;margin:0 3px;"></span> REBIT 2A (서쪽)</label>
+    <label><input type="checkbox" id="chk-faf" checked> <span style="color:#E65100;">&#9670;</span> FAF</label>
+    <div class="section-title">── 평균 항적 ──</div>
+    <label><input type="checkbox" id="chk-avg-교란_GUKDO"> <span style="display:inline-block;width:20px;height:3px;background:#C62828;vertical-align:middle;margin:0 3px;"></span> 교란 | GUKDO_평균값 (3547편)</label>
+    <label><input type="checkbox" id="chk-avg-교란_KARBU"> <span style="display:inline-block;width:20px;height:3px;background:#C62828;vertical-align:middle;margin:0 3px;"></span> 교란 | KARBU_평균값 (143편)</label>
+    <label><input type="checkbox" id="chk-avg-교란_OLMEN"> <span style="display:inline-block;width:20px;height:3px;background:#C62828;vertical-align:middle;margin:0 3px;"></span> 교란 | OLMEN_평균값 (2979편)</label>
+    <label><input type="checkbox" id="chk-avg-교란_REBIT"> <span style="display:inline-block;width:20px;height:3px;background:#C62828;vertical-align:middle;margin:0 3px;"></span> 교란 | REBIT_평균값 (1867편)</label>
+    <label><input type="checkbox" id="chk-avg-정상_GUKDO"> <span style="display:inline-block;width:20px;height:3px;background:#1565C0;vertical-align:middle;margin:0 3px;"></span> 정상 | GUKDO_평균값 (1047편)</label>
+    <label><input type="checkbox" id="chk-avg-정상_KARBU"> <span style="display:inline-block;width:20px;height:3px;background:#1565C0;vertical-align:middle;margin:0 3px;"></span> 정상 | KARBU_평균값 (36편)</label>
+    <label><input type="checkbox" id="chk-avg-정상_OLMEN"> <span style="display:inline-block;width:20px;height:3px;background:#1565C0;vertical-align:middle;margin:0 3px;"></span> 정상 | OLMEN_평균값 (673편)</label>
+    <label><input type="checkbox" id="chk-avg-정상_REBIT"> <span style="display:inline-block;width:20px;height:3px;background:#1565C0;vertical-align:middle;margin:0 3px;"></span> 정상 | REBIT_평균값 (485편)</label>
+</div>
+
+<script>
+var map = L.map('map', {preferCanvas: true}).setView([37.4602, 126.4407], 9);
+
+var tileLight = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+    attribution: '&copy; OpenStreetMap contributors &copy; CARTO', maxZoom: 20
+}).addTo(map);
+var tileDark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    attribution: '&copy; OpenStreetMap contributors &copy; CARTO', maxZoom: 20
+});
+
+function switchTile(mode) {
+    if (mode === 'light') {
+        if (!map.hasLayer(tileLight)) { map.addLayer(tileLight); map.removeLayer(tileDark); }
+        document.getElementById('btn-light').classList.add('active');
+        document.getElementById('btn-dark').classList.remove('active');
+    } else {
+        if (!map.hasLayer(tileDark)) { map.addLayer(tileDark); map.removeLayer(tileLight); }
+        document.getElementById('btn-dark').classList.add('active');
+        document.getElementById('btn-light').classList.remove('active');
+    }
+}
+
+L.marker([37.4602, 126.4407]).bindPopup('인천국제공항 (ICN)').addTo(map);
+
+// ── 이름 텍스트 레이블 생성 함수 ──
+function makeLabel(lat, lon, name, color) {
+    return L.marker([lat, lon], {
+        icon: L.divIcon({
+            html: '<div style="font-size:9px;font-weight:bold;color:' + color +
+                  ';text-shadow:0 0 2px #fff,-1px -1px 2px #fff,1px 1px 2px #fff;' +
+                  'white-space:nowrap;text-align:center;line-height:1;">' + name + '</div>',
+            iconSize: [60, 12], iconAnchor: [30, -9], className: 'fix-label'
+        }),
+        interactive: false
+    });
+}
+
+// ── FAF 마커 (초기 표시) ──
+var fafIcon = L.divIcon({
+    html: '<div style="width:12px;height:12px;background:#E65100;border:2px solid #fff;' +
+          'border-radius:2px;transform:rotate(45deg);box-shadow:0 0 3px rgba(0,0,0,.5);"></div>',
+    iconSize:[12,12], iconAnchor:[6,6], className:''
+});
+var layerFAF = L.layerGroup().addTo(map);
+[{"name": "GOKAK", "lat": 37.35066, "lon": 126.55847, "rwy": "RWY 33/34계열"}, {"name": "BODIK", "lat": 37.37702, "lon": 126.49497, "rwy": "RWY 33/34계열"}].forEach(function(f) {
+    L.marker([f.lat, f.lon], {icon: fafIcon}).addTo(layerFAF);
+    makeLabel(f.lat, f.lon, f.name, '#E65100').addTo(layerFAF);
+});
+
+// ── STAR 경로 팬 ──
+map.createPane('starPane');
+map.getPane('starPane').style.zIndex = 450;
+map.createPane('wpPane');
+map.getPane('wpPane').style.zIndex = 460;
+
+// ── STAR 데이터 (웨이포인트 이름 + 좌표) ──
+var STAR_DATA = {"GUKDO": {"name": "GUKDO 2E", "color": "#27ae60", "wp": [["GUKDO", 37.019694, 127.639694], ["KAKSO", 37.129056, 127.443722], ["GEO46", 37.199889, 127.316194], ["ELMAP", 37.267111, 127.187472], ["TESIK", 37.271278, 126.909583], ["GEO23", 37.340778, 126.822972], ["GEO22", 37.387083, 126.761222], ["GEO16", 37.347333, 126.689389], ["GEO17", 37.292750, 126.737528], ["GEO20", 37.238194, 126.785611], ["GEO24", 37.183583, 126.833611], ["GEO28", 37.128972, 126.881528], ["GEO27", 37.081000, 126.829639], ["ENPIL", 37.160833, 126.726111]]}, "KARBU": {"name": "KARBU 2E", "color": "#f39c12", "wp": [["KARBU", 37.533056, 127.664444], ["EGOBA", 37.487417, 127.379417], ["KEO44", 37.373278, 127.277972], ["ELMAP", 37.267111, 127.187472], ["TESIK", 37.271278, 126.909583], ["GEO23", 37.340778, 126.822972], ["GEO22", 37.387083, 126.761222], ["GEO16", 37.347333, 126.689389], ["GEO17", 37.292750, 126.737528], ["GEO20", 37.238194, 126.785611], ["GEO24", 37.183583, 126.833611], ["GEO28", 37.128972, 126.881528], ["GEO27", 37.081000, 126.829639], ["ENPIL", 37.160833, 126.726111]]}, "OLMEN": {"name": "OLMEN 2E", "color": "#e67e22", "wp": [["OLMEN", 36.737056, 126.991000], ["DY037", 36.936806, 126.885667], ["BOBIB", 37.092111, 127.066444], ["DEO31", 37.186444, 126.984250], ["TESIK", 37.271278, 126.909583], ["GEO23", 37.340778, 126.822972], ["GEO22", 37.387083, 126.761222], ["GEO16", 37.347333, 126.689389], ["GEO17", 37.292750, 126.737528], ["GEO20", 37.238194, 126.785611], ["GEO24", 37.183583, 126.833611], ["GEO28", 37.128972, 126.881528], ["GEO27", 37.081000, 126.829639], ["ENPIL", 37.160833, 126.726111]]}, "REBIT": {"name": "REBIT 2A", "color": "#9b59b6", "wp": [["REBIT", 37.200833, 125.486861], ["PY049", 37.138306, 125.801278], ["PY037", 37.141139, 126.007000], ["CW001", 37.179806, 126.334333], ["CW002", 37.164556, 126.352056], ["CW003", 37.060111, 126.400222], ["CW004", 37.025083, 126.467111], ["CW005", 37.015083, 126.553389], ["PAMBI", 37.181750, 126.542889]]}};
+var FIX_COLORS = {"GUKDO": "#27ae60", "KARBU": "#f39c12", "OLMEN": "#e67e22", "REBIT": "#9b59b6"};
+
+// ── 픽스별 레이어 객체 ──
+var fixMarkers   = {};   // Entry Fix 다이아몬드
+var fixLabels    = {};   // 이름 텍스트
+var fixPolylines = {};   // STAR 경로 선
+var fixWpDots    = {};   // STAR 경로 웨이포인트 점
+
+[{"name": "GUKDO", "lat": 37.019694, "lon": 127.639694, "dir": "동남쪽"}, {"name": "KARBU", "lat": 37.533056, "lon": 127.664444, "dir": "동쪽"}, {"name": "OLMEN", "lat": 36.737056, "lon": 126.991000, "dir": "남쪽"}, {"name": "REBIT", "lat": 37.200833, "lon": 125.486861, "dir": "서쪽"}].forEach(function(f) {
+    var fix   = f.name;
+    var color = FIX_COLORS[fix];
+    var s     = STAR_DATA[fix];
+
+    // Entry Fix 다이아몬드 마커
+    fixMarkers[fix] = L.marker([f.lat, f.lon], {
+        icon: L.divIcon({
+            html: '<div style="width:14px;height:14px;background:' + color +
+                  ';border:2px solid #fff;border-radius:2px;transform:rotate(45deg);' +
+                  'box-shadow:0 0 4px rgba(0,0,0,.6);"></div>',
+            iconSize:[14,14], iconAnchor:[7,7], className:''
+        })
+    });
+
+    // 이름 텍스트 레이블
+    fixLabels[fix] = makeLabel(f.lat, f.lon, fix, color);
+
+    // STAR 경로 폴리라인
+    var coords = s.wp.map(function(w) { return [w[1], w[2]]; });
+    fixPolylines[fix] = L.polyline(coords, {
+        pane: 'starPane',
+        color: color,
+        weight: 2.5,
+        opacity: 0.85,
+        dashArray: '10, 6'
+    }).bindTooltip('STAR: ' + s.name, { sticky: true });
+
+    // 각 웨이포인트 점 (layerGroup)
+    fixWpDots[fix] = L.layerGroup();
+    s.wp.forEach(function(w) {
+        L.circleMarker([w[1], w[2]], {
+            pane: 'wpPane',
+            radius: 4,
+            color: color,
+            fillColor: color,
+            fillOpacity: 0.85,
+            weight: 1.5
+        }).bindTooltip(w[0], { sticky: true })
+          .addTo(fixWpDots[fix]);
+    });
+});
+
+// ── 항적 레이어 (초기 비활성) ──
+var FIXES  = ['GUKDO','KARBU','OLMEN','REBIT'];
+var COLORS = {disrupted:'#C62828', normal:'#1565C0'};
+var trackLayers = {};
+FIXES.forEach(function(fix) {
+    trackLayers['disrupted_' + fix] = L.layerGroup();
+    trackLayers['normal_'    + fix] = L.layerGroup();
+});
+
+var canvasRenderer = L.canvas();
+
+function renderByFix(data, group) {
+    var color   = COLORS[group];
+    var buckets = {};
+    FIXES.forEach(function(fix) { buckets[fix] = []; });
+    data.features.forEach(function(f) {
+        var fix = f.properties.entry_fix;
+        if (fix && buckets[fix]) buckets[fix].push(f);
+    });
+    FIXES.forEach(function(fix) {
+        L.geoJSON({type:'FeatureCollection', features:buckets[fix]}, {
+            renderer: canvasRenderer,
+            style: function() { return {color:color, weight:1.5, opacity:0.05}; },
+            pointToLayer: function(feature, latlng) {
+                return L.circleMarker(latlng, {
+                    renderer:canvasRenderer, radius:2.5,
+                    color:color, fillColor:color, fillOpacity:0.05, weight:1
+                });
+            },
+            onEachFeature: function(feature, layer) {
+                var p = feature.properties;
+                if (feature.geometry.type === 'Point')
+                    layer.bindTooltip(p.flight + ' | ' + p.time, {sticky:true});
+                else
+                    layer.bindTooltip(p.flight + ' (' + p.faf + ')', {sticky:true});
+            }
+        }).addTo(trackLayers[group + '_' + fix]);
+    });
+}
+
+var loadingEl = document.getElementById('loading');
+Promise.all([
+    fetch('tracks_disrupted_33r34l.geojson').then(function(r) { return r.json(); }),
+    fetch('tracks_normal_33r34l.geojson').then(function(r) { return r.json(); })
+]).then(function(results) {
+    renderByFix(results[0], 'disrupted');
+    renderByFix(results[1], 'normal');
+    loadingEl.style.display = 'none';
+}).catch(function(err) {
+    loadingEl.innerHTML = '&#10060; 로딩 실패: ' + err.message +
+        '<br><small>run_map.bat 을 실행하여 로컬 서버로 열어주세요.</small>';
+});
+
+// ── 이벤트 리스너 ──
+document.querySelectorAll('.chk-track').forEach(function(chk) {
+    chk.addEventListener('change', function() {
+        var key = this.dataset.group + '_' + this.dataset.fix;
+        if (this.checked) trackLayers[key].addTo(map);
+        else              trackLayers[key].remove();
+    });
+});
+
+FIXES.forEach(function(fix) {
+    var chk = document.getElementById('chk-fix-' + fix);
+    if (!chk) return;
+    chk.addEventListener('change', function() {
+        if (this.checked) {
+            fixMarkers[fix].addTo(map);
+            fixLabels[fix].addTo(map);
+            fixPolylines[fix].addTo(map);
+            fixWpDots[fix].addTo(map);
+        } else {
+            if (map.hasLayer(fixMarkers[fix]))   map.removeLayer(fixMarkers[fix]);
+            if (map.hasLayer(fixLabels[fix]))    map.removeLayer(fixLabels[fix]);
+            if (map.hasLayer(fixPolylines[fix])) map.removeLayer(fixPolylines[fix]);
+            if (map.hasLayer(fixWpDots[fix]))    map.removeLayer(fixWpDots[fix]);
+        }
+    });
+});
+
+document.getElementById('chk-faf').addEventListener('change', function() {
+    if (this.checked) layerFAF.addTo(map);
+    else              layerFAF.remove();
+});
+
+
+// ── 평균 항적 레이어 ──
+map.createPane('avgPane');
+map.getPane('avgPane').style.zIndex = 470;
+var AVG_DATA = {
+    "교란_GUKDO": {"coords": [[37.016792, 127.631654], [37.06293, 127.537923], [37.107197, 127.435897], [37.144734, 127.337524], [37.174737, 127.239005], [37.192, 127.143125], [37.198464, 127.049594], [37.20091, 126.960127], [37.203269, 126.875853], [37.210052, 126.79642], [37.225825, 126.723936], [37.251, 126.663681], [37.281516, 126.618397], [37.30423, 126.591884], [37.311884, 126.583012], [37.310812, 126.58237], [37.306582, 126.583833], [37.299709, 126.577049]], "n": 3547, "color": "#27ae60", "disrupted": true, "label": "교란 | GUKDO_평균값"},
+    "교란_KARBU": {"coords": [[37.527431, 127.670144], [37.499765, 127.556314], [37.469696, 127.445061], [37.434216, 127.3462], [37.388681, 127.252675], [37.345697, 127.165049], [37.309756, 127.083485], [37.279095, 126.999412], [37.25415, 126.9154], [37.236839, 126.831183], [37.229119, 126.75468], [37.23767, 126.691595], [37.264146, 126.638899], [37.294236, 126.603357], [37.29936, 126.597607], [37.311063, 126.58938], [37.324168, 126.577799], [37.324849, 126.578155]], "n": 143, "color": "#f39c12", "disrupted": true, "label": "교란 | KARBU_평균값"},
+    "교란_OLMEN": {"coords": [[36.739192, 126.977884], [36.824711, 126.956376], [36.904511, 126.925474], [36.972933, 126.890007], [37.033886, 126.851093], [37.087896, 126.80258], [37.13392, 126.748877], [37.175865, 126.698343], [37.215755, 126.656236], [37.253777, 126.620913], [37.281308, 126.598026], [37.288154, 126.595127], [37.289686, 126.598438], [37.29002, 126.600947], [37.290065, 126.601669], [37.280233, 126.609755], [37.277507, 126.607344]], "n": 2979, "color": "#e67e22", "disrupted": true, "label": "교란 | OLMEN_평균값"},
+    "교란_REBIT": {"coords": [[37.197534, 125.490146], [37.19648, 125.620906], [37.195479, 125.747795], [37.194816, 125.864999], [37.194447, 125.9721], [37.194337, 126.073275], [37.194923, 126.170259], [37.196342, 126.262885], [37.199183, 126.350085], [37.20501, 126.429997], [37.219369, 126.499828], [37.246479, 126.546794], [37.276841, 126.560813], [37.295695, 126.559728], [37.302461, 126.557158], [37.300426, 126.555697], [37.296325, 126.552761]], "n": 1867, "color": "#9b59b6", "disrupted": true, "label": "교란 | REBIT_평균값"},
+    "정상_GUKDO": {"coords": [[37.017393, 127.634791], [37.063086, 127.543434], [37.107536, 127.442959], [37.145857, 127.34569], [37.177464, 127.247713], [37.199745, 127.150856], [37.212758, 127.058004], [37.220975, 126.967074], [37.222656, 126.882858], [37.225295, 126.800671], [37.235861, 126.72367], [37.254826, 126.660265], [37.277624, 126.618836], [37.299845, 126.591941], [37.310972, 126.578195], [37.308974, 126.575574], [37.2994, 126.574916], [37.289296, 126.57301]], "n": 1047, "color": "#27ae60", "disrupted": false, "label": "정상 | GUKDO_평균값"},
+    "정상_KARBU": {"coords": [[37.524529, 127.632123], [37.498579, 127.519246], [37.468879, 127.40902], [37.434273, 127.315587], [37.389918, 127.21543], [37.353599, 127.127606], [37.32101, 127.075982], [37.289963, 126.989255], [37.266894, 126.906526], [37.252623, 126.818621], [37.248346, 126.739193], [37.24815, 126.682419], [37.267721, 126.635025], [37.302464, 126.589858], [37.32027, 126.571418], [37.335738, 126.565906], [37.349104, 126.554093]], "n": 36, "color": "#f39c12", "disrupted": false, "label": "정상 | KARBU_평균값"},
+    "정상_OLMEN": {"coords": [[36.735013, 126.981376], [36.819727, 126.958589], [36.89866, 126.924924], [36.965571, 126.884058], [37.023888, 126.837577], [37.074936, 126.785577], [37.121769, 126.73147], [37.164923, 126.681926], [37.207041, 126.64082], [37.247629, 126.607343], [37.280707, 126.580799], [37.293104, 126.568455], [37.295769, 126.562542], [37.295023, 126.556502], [37.296698, 126.547767], [37.296875, 126.533716], [37.282211, 126.511372]], "n": 673, "color": "#e67e22", "disrupted": false, "label": "정상 | OLMEN_평균값"},
+    "정상_REBIT": {"coords": [[37.197502, 125.489493], [37.196179, 125.619654], [37.195175, 125.747213], [37.194898, 125.863197], [37.194965, 125.97051], [37.194966, 126.071398], [37.194277, 126.167403], [37.194373, 126.259408], [37.196342, 126.347641], [37.202487, 126.428013], [37.217363, 126.497781], [37.244062, 126.54597], [37.274524, 126.561579], [37.294414, 126.559607], [37.298953, 126.556997], [37.299705, 126.550093], [37.292007, 126.547719]], "n": 485, "color": "#9b59b6", "disrupted": false, "label": "정상 | REBIT_평균값"}
+};
+var avgLayerObj = {};
+Object.keys(AVG_DATA).forEach(function(key) {
+    var d = AVG_DATA[key];
+    avgLayerObj[key] = L.polyline(d.coords, {
+        pane: 'avgPane',
+        color: d.disrupted ? '#C62828' : '#1565C0',
+        weight: 4,
+        opacity: 0.9
+    }).bindTooltip(d.label + ' (' + d.n + '편)', {sticky: true});
+    var el = document.getElementById('chk-avg-' + key);
+    if (!el) return;
+    el.addEventListener('change', function() {
+        if (this.checked) avgLayerObj[key].addTo(map);
+        else if (map.hasLayer(avgLayerObj[key])) map.removeLayer(avgLayerObj[key]);
+    });
+});
+</script>
